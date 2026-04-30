@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -243,20 +243,20 @@ function looksIncompleteMermaid(chart: string) {
 
 function MermaidBlock({ chart, isStreaming }: MermaidBlockProps) {
   const [svg, setSvg] = useState("");
-  const [failed, setFailed] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const latestValidSvgRef = useRef("");
   const mermaidId = useId().replace(/:/g, "");
   const sanitizedChart = sanitizeMermaidChart(chart);
 
   useEffect(() => {
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const renderChart = async (attempt = 0) => {
+    const runSafeRender = async () => {
       if (isStreaming && looksIncompleteMermaid(sanitizedChart)) {
         setIsPending(true);
-        setFailed(false);
-        setSvg("");
+        setHasError(false);
         return;
       }
 
@@ -272,46 +272,49 @@ function MermaidBlock({ chart, isStreaming }: MermaidBlockProps) {
           mermaidInitialized = true;
         }
 
-        const result = await mermaid.render(
-          `prd-mermaid-${mermaidId}`,
-          sanitizedChart,
-        );
-        if (!cancelled) {
-          if (isErrorSvg(result.svg)) {
-            throw new Error("Mermaid returned error SVG.");
-          }
-          setSvg(result.svg);
-          setFailed(false);
-          setIsPending(false);
+        await mermaid.parse(sanitizedChart);
+        const renderId = `prd-mermaid-${mermaidId}-${Math.random().toString(36).slice(2, 8)}`;
+        const result = await mermaid.render(renderId, sanitizedChart);
+        if (cancelled) {
+          return;
         }
+
+        if (isErrorSvg(result.svg)) {
+          throw new Error("Mermaid returned error SVG.");
+        }
+
+        latestValidSvgRef.current = result.svg;
+        setSvg(result.svg);
+        setHasError(false);
+        setIsPending(false);
       } catch {
         if (cancelled) {
           return;
         }
 
-        if (isStreaming && attempt < 4) {
-          setIsPending(true);
-          timer = setTimeout(() => {
-            void renderChart(attempt + 1);
-          }, 220 * (attempt + 1));
-          return;
-        }
+        setHasError(true);
+        setIsPending(isStreaming && looksIncompleteMermaid(sanitizedChart));
 
-        setFailed(true);
-        setIsPending(false);
-        setSvg("");
+        // Preserve the last valid chart to avoid permanent downgrade
+        // when stream chunks are temporarily invalid/incomplete.
+        if (latestValidSvgRef.current) {
+          setSvg(latestValidSvgRef.current);
+        } else if (!isStreaming) {
+          setSvg("");
+        }
       }
     };
 
     setIsPending(isStreaming);
-    setFailed(false);
-    setSvg("");
-    void renderChart();
+    setHasError(false);
+    debounceTimer = setTimeout(() => {
+      void runSafeRender();
+    }, 180);
 
     return () => {
       cancelled = true;
-      if (timer) {
-        clearTimeout(timer);
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
       }
     };
   }, [mermaidId, sanitizedChart, isStreaming]);
@@ -324,7 +327,7 @@ function MermaidBlock({ chart, isStreaming }: MermaidBlockProps) {
     );
   }
 
-  if (failed || !svg) {
+  if (hasError || !svg) {
     return (
       <pre>
         <code>{chart}</code>
