@@ -104,7 +104,13 @@ Format Requirements (Strictly follow this structure):
   - Forbidden chart types: \`quadrantChart\`, \`mindmap\`, \`journey\`, \`timeline\`, \`stateDiagram\`, \`sequenceDiagram\`, \`gantt\`, \`sankey\`, \`xychart\`, and any other advanced type.
   - Use plain labels without quotes, parentheses, or special punctuation in Mermaid lines.
   - Keep Mermaid blocks short and conservative: pie (3-6 rows), flowchart (5-10 nodes max).
-  - Wrap each diagram strictly in a separate \`\`\`mermaid code block. Do not output prose inside the code block.`,
+  - Wrap each diagram strictly in a separate \`\`\`mermaid code block. Do not output prose inside the code block.
+- Markdown formatting hard rules:
+  - Markdown tables MUST use standard multi-line table syntax; each row must occupy exactly one line.
+  - NEVER compress table rows into a single line with \`||\` or continuous pipes.
+  - For execution checklists, prefer bullet lists (\`- [ ]\`) over giant single-line pipe tables.
+- Output quality gate:
+  - Ensure headings, paragraphs, bullet lists, and tables are separated by blank lines for stable rendering.`,
       prompt: payload.basePrd && payload.evolutionSuggestion
         ? `
 当前任务是对现有 PRD 做“采纳并进化”重写，而不是从零生成。
@@ -122,6 +128,8 @@ ${payload.evolutionSuggestion}
 1) 保留原文结构主线，但根据建议进行实质性增强。
 2) 所有新增或改写的关键内容必须用 <mark>...</mark> 包裹。
 3) 输出完整 PRD Markdown（不是局部片段）。
+4) CRITICAL RULE: You MUST wrap all modified, added, or deeply revised text strictly within <mark> and </mark> tags.
+5) CRITICAL RULE: Do NOT wrap unchanged original text with <mark>.
 `
         : `
 产品品类 (Product Category): ${payload.productCategory}

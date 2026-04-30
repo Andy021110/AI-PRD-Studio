@@ -64,6 +64,10 @@ const INVALID_DATA_MESSAGE =
   "数据格式不匹配，请检查是否包含 rating, date, content 字段";
 const FILE_INPUT_ID = "reviews-file-input";
 
+function stripMarkTags(raw: string) {
+  return raw.replace(/<mark[^>]*>|<\/mark>/g, "");
+}
+
 function toSafeString(value: unknown): string {
   if (value === undefined || value === null) {
     return "";
@@ -239,6 +243,7 @@ export default function Home() {
   const [enableSearch, setEnableSearch] = useState(false);
   const [insights, setInsights] = useState<InsightItem[]>([]);
   const [prdContent, setPrdContent] = useState("");
+  const [iterationBaseline, setIterationBaseline] = useState("");
   const [selectedRlhfScore, setSelectedRlhfScore] = useState<number | null>(null);
   const [hasSubmittedRlhf, setHasSubmittedRlhf] = useState(false);
   const [isCriticLoading, setIsCriticLoading] = useState(false);
@@ -301,7 +306,7 @@ export default function Home() {
   }, [insights.length, isAnalyzing, isGeneratingPrd, isInspecting, prdContent, reviews.length]);
 
   const prdHeadings = useMemo(
-    () => extractMarkdownHeadings(prdContent),
+    () => extractMarkdownHeadings(stripMarkTags(prdContent)),
     [prdContent],
   );
 
@@ -375,6 +380,7 @@ export default function Home() {
     setProductCategory(inspectResult.productCategory || "未知品类");
     setInsights([]);
     setPrdContent("");
+    setIterationBaseline("");
     setSelectedRlhfScore(null);
     setHasSubmittedRlhf(false);
     setIsCriticLoading(false);
@@ -395,6 +401,7 @@ export default function Home() {
     setProductCategory("");
     setInsights([]);
     setPrdContent("");
+    setIterationBaseline("");
     setSelectedRlhfScore(null);
     setHasSubmittedRlhf(false);
     setIsCriticLoading(false);
@@ -421,6 +428,7 @@ export default function Home() {
     setIsAnalyzing(true);
     setInsights([]);
     setPrdContent("");
+    setIterationBaseline("");
     setSelectedRlhfScore(null);
     setHasSubmittedRlhf(false);
     setIsCriticLoading(false);
@@ -481,6 +489,7 @@ export default function Home() {
 
     setIsGeneratingPrd(true);
     setPrdContent("");
+    setIterationBaseline("");
     setSelectedRlhfScore(null);
     setHasSubmittedRlhf(false);
     setIsCriticLoading(false);
@@ -528,6 +537,7 @@ export default function Home() {
       if (!accumulated.trim()) {
         throw new Error("PRD 流式输出为空，请稍后重试。");
       }
+      const cleanPrd = stripMarkTags(accumulated);
       setPrdContent(accumulated);
       incrementPrds();
       toast({
@@ -535,7 +545,7 @@ export default function Home() {
         title: "PRD 已生成",
         description: "结构化 PRD 草案已完成。",
       });
-      void triggerCriticReview(accumulated);
+      void triggerCriticReview(cleanPrd);
     } catch (error) {
       const message = error instanceof Error ? error.message : "PRD 生成失败。";
       toast({
@@ -565,7 +575,7 @@ export default function Home() {
     )}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     const filename = `PRD_${timestamp}.md`;
 
-    const cleanMarkdown = prdContent.replace(/<mark[^>]*>|<\/mark>/g, "");
+    const cleanMarkdown = stripMarkTags(prdContent);
     const blob = new Blob([cleanMarkdown], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -671,8 +681,10 @@ export default function Home() {
       return;
     }
 
+    const baseline = stripMarkTags(prdContent);
     setIsGeneratingPrd(true);
     setPrdContent("");
+    setIterationBaseline(baseline);
     setSelectedRlhfScore(null);
     setHasSubmittedRlhf(false);
     setIsCriticLoading(false);
@@ -690,7 +702,7 @@ export default function Home() {
           insights,
           productCategory,
           enableSearch,
-          basePrd: prdContent,
+          basePrd: baseline,
           evolutionSuggestion: `标题: ${suggestion.title}\n原因: ${suggestion.rationale}\n采纳动作: ${suggestion.action}`,
         }),
       });
@@ -722,6 +734,7 @@ export default function Home() {
       if (!accumulated.trim()) {
         throw new Error("PRD 重写输出为空，请稍后重试。");
       }
+      const cleanPrd = stripMarkTags(accumulated);
       setPrdContent(accumulated);
       incrementPrds();
       toast({
@@ -730,7 +743,7 @@ export default function Home() {
         description: "已采纳建议并完成重写。",
       });
 
-      void triggerCriticReview(accumulated);
+      void triggerCriticReview(cleanPrd);
     } catch (error) {
       const message = error instanceof Error ? error.message : "PRD 重写失败。";
       toast({
@@ -1159,6 +1172,7 @@ export default function Home() {
                           </div>
                           <PrdMarkdown
                             content={prdContent}
+                            baselineContent={iterationBaseline}
                             isStreaming={isGeneratingPrd}
                           />
                           <div className="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4">

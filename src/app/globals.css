@@ -134,6 +134,9 @@
   html {
     @apply font-sans;
   }
+  mark {
+    @apply bg-yellow-200/80 text-neutral-900 px-1 mx-0.5 rounded-sm font-medium;
+  }
 }
 
 @layer components {

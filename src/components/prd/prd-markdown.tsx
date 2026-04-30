@@ -13,6 +13,7 @@ import { PRD_PROSE_CLASS } from "@/lib/markdown/prose";
 
 type PrdMarkdownProps = {
   content: string;
+  baselineContent?: string;
   isStreaming?: boolean;
   className?: string;
 };
@@ -55,6 +56,164 @@ function isErrorSvg(svg: string) {
   );
 }
 
+function isLikelyMermaidSnippet(raw: string) {
+  const firstLine = raw.trim().split("\n")[0]?.trim().toLowerCase() ?? "";
+  return (
+    firstLine === "pie" ||
+    firstLine.startsWith("pie ") ||
+    firstLine.startsWith("flowchart") ||
+    firstLine.startsWith("graph ")
+  );
+}
+
+function sanitizeMermaidChart(rawChart: string) {
+  const lines = rawChart
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return rawChart.trim();
+  }
+
+  const header = lines[0].toLowerCase();
+  if (header === "pie" || header.startsWith("pie ")) {
+    const result: string[] = [];
+    const titleLine = lines.find(
+      (line, index) => index > 0 && line.toLowerCase().startsWith("title "),
+    );
+
+    if (titleLine) {
+      result.push(`pie ${titleLine}`);
+    } else {
+      result.push(lines[0]);
+    }
+
+    for (let i = 1; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (line.toLowerCase().startsWith("title ")) {
+        continue;
+      }
+
+      // Normalize common model slip: "Label = 30" -> "Label : 30".
+      if (line.includes("=") && !line.includes(":")) {
+        result.push(line.replace("=", ":"));
+        continue;
+      }
+
+      result.push(line);
+    }
+
+    return result.join("\n");
+  }
+
+  return lines.join("\n");
+}
+
+function normalizeCollapsedTableLine(line: string) {
+  const pipeCount = (line.match(/\|/g) ?? []).length;
+  if (pipeCount < 6 || !line.includes("||")) {
+    return line;
+  }
+
+  const firstPipe = line.indexOf("|");
+  if (firstPipe < 0) {
+    return line;
+  }
+
+  const leadText = line.slice(0, firstPipe).trim();
+  const tableText = line
+    .slice(firstPipe)
+    .replace(/\s*\|\|\s*/g, "\n|")
+    .trim();
+
+  const rows = tableText
+    .split("\n")
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .map((row) => (row.startsWith("|") ? row : `| ${row}`))
+    .map((row) => (row.endsWith("|") ? row : `${row} |`));
+
+  if (rows.length === 0) {
+    return line;
+  }
+
+  const headerCells = rows[0]
+    .split("|")
+    .map((cell) => cell.trim())
+    .filter(Boolean);
+  if (headerCells.length < 2) {
+    return line;
+  }
+
+  if (rows.length === 1 || !/^\|\s*:?-{2,}/.test(rows[1])) {
+    const separator = `| ${headerCells.map(() => "---").join(" | ")} |`;
+    rows.splice(1, 0, separator);
+  }
+
+  const tableBlock = rows.join("\n");
+  return leadText ? `${leadText}\n\n${tableBlock}` : tableBlock;
+}
+
+function normalizeMarkdownForRender(rawContent: string) {
+  return rawContent
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => normalizeCollapsedTableLine(line))
+    .join("\n");
+}
+
+function stripMarkTags(raw: string) {
+  return raw.replace(/<mark[^>]*>|<\/mark>/g, "");
+}
+
+function isHighlightableParagraph(paragraph: string) {
+  const trimmed = paragraph.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (trimmed.includes("```")) {
+    return false;
+  }
+
+  return !/^(#{1,6}\s|[-*+]\s|\d+\.\s|>\s?|\|)/.test(trimmed);
+}
+
+function applyIterationHighlights(currentContent: string, baselineContent?: string) {
+  const cleanCurrent = stripMarkTags(currentContent);
+  if (!baselineContent?.trim()) {
+    return cleanCurrent;
+  }
+
+  if (currentContent.includes("<mark")) {
+    // Respect backend-provided marks when present.
+    return currentContent;
+  }
+
+  const baselineParagraphs = new Set(
+    stripMarkTags(baselineContent)
+      .split(/\n{2,}/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+
+  const currentParagraphs = cleanCurrent.split(/\n{2,}/);
+  return currentParagraphs
+    .map((paragraph) => {
+      const normalized = paragraph.trim();
+      if (!normalized || !isHighlightableParagraph(paragraph)) {
+        return paragraph;
+      }
+      if (baselineParagraphs.has(normalized)) {
+        return paragraph;
+      }
+      return `<mark class="diff-highlight">${paragraph}</mark>`;
+    })
+    .join("\n\n");
+}
+
 function looksIncompleteMermaid(chart: string) {
   const trimmed = chart.trim();
   if (!trimmed) {
@@ -87,13 +246,14 @@ function MermaidBlock({ chart, isStreaming }: MermaidBlockProps) {
   const [failed, setFailed] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const mermaidId = useId().replace(/:/g, "");
+  const sanitizedChart = sanitizeMermaidChart(chart);
 
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const renderChart = async (attempt = 0) => {
-      if (isStreaming && looksIncompleteMermaid(chart)) {
+      if (isStreaming && looksIncompleteMermaid(sanitizedChart)) {
         setIsPending(true);
         setFailed(false);
         setSvg("");
@@ -112,7 +272,10 @@ function MermaidBlock({ chart, isStreaming }: MermaidBlockProps) {
           mermaidInitialized = true;
         }
 
-        const result = await mermaid.render(`prd-mermaid-${mermaidId}`, chart);
+        const result = await mermaid.render(
+          `prd-mermaid-${mermaidId}`,
+          sanitizedChart,
+        );
         if (!cancelled) {
           if (isErrorSvg(result.svg)) {
             throw new Error("Mermaid returned error SVG.");
@@ -151,7 +314,7 @@ function MermaidBlock({ chart, isStreaming }: MermaidBlockProps) {
         clearTimeout(timer);
       }
     };
-  }, [chart, mermaidId, isStreaming]);
+  }, [mermaidId, sanitizedChart, isStreaming]);
 
   if (isPending) {
     return (
@@ -179,9 +342,17 @@ function MermaidBlock({ chart, isStreaming }: MermaidBlockProps) {
 
 export function PrdMarkdown({
   content,
+  baselineContent,
   isStreaming = false,
   className,
 }: PrdMarkdownProps) {
+  const displayContent = useMemo(
+    () =>
+      normalizeMarkdownForRender(
+        applyIterationHighlights(content, isStreaming ? undefined : baselineContent),
+      ),
+    [baselineContent, content, isStreaming],
+  );
   const fallbackText = isStreaming
     ? "正在生成结构化 PRD，请稍候..."
     : "暂无可展示的 PRD 内容。";
@@ -225,9 +396,19 @@ export function PrdMarkdown({
           {children}
         </h3>
       ),
-      code: ({ className: codeClassName, children, ...props }: MarkdownCodeProps) => {
-        if (codeClassName?.includes("language-mermaid")) {
-          const chart = String(children).trim();
+      code: ({
+        className: codeClassName,
+        inline,
+        children,
+        ...props
+      }: MarkdownCodeProps) => {
+        const chart = String(children).trim();
+        const shouldUseMermaid =
+          !inline &&
+          (codeClassName?.includes("language-mermaid") ||
+            isLikelyMermaidSnippet(chart));
+
+        if (shouldUseMermaid) {
           return <MermaidBlock chart={chart} isStreaming={isStreaming} />;
         }
 
@@ -247,7 +428,7 @@ export function PrdMarkdown({
         rehypePlugins={[rehypeRaw]}
         components={markdownComponents}
       >
-        {content.trim() || fallbackText}
+        {displayContent.trim() || fallbackText}
       </ReactMarkdown>
     </div>
   );
