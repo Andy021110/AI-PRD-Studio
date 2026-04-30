@@ -1,0 +1,64 @@
+# AI PRD Generator Engineering Rules
+
+## 1) TypeScript Is Mandatory
+
+- All new code must be written in TypeScript (`.ts` / `.tsx`).
+- `any` is forbidden unless there is a documented and reviewed exception.
+- Prefer explicit interfaces/types for domain models, agent inputs, and outputs.
+- Public functions must have clear input and return types.
+- Runtime data from external sources (API/file upload/LLM response) must be validated before use.
+
+## 2) Business Logic Separation
+
+- Never place business logic directly in page-level components.
+- Pages and UI components should focus on rendering and user interaction only.
+- Put domain logic in `src/lib/` or feature-specific service modules.
+- AI workflow orchestration must live in agent/service layers, not in `src/app/**/page.tsx`.
+- For complex UI state, move reusable behavior to custom hooks.
+
+## 3) Styling Standards
+
+- Tailwind CSS is the first and default styling solution.
+- Avoid ad-hoc CSS files unless a Tailwind-first approach is not feasible.
+- Prefer utility classes and design tokens over hard-coded colors or spacing.
+- Use `shadcn/ui` components as base primitives before creating custom alternatives.
+- Keep dark mode as the default visual mode for this project.
+
+## 4) Component Architecture
+
+- Keep components small, composable, and single-purpose.
+- Shared UI primitives belong in `src/components/ui`.
+- Feature components should live close to their feature domain.
+- Avoid prop drilling across many levels; use composition or scoped state patterns.
+
+## 5) AI Agent Layer Conventions
+
+- Agent responsibilities must remain isolated:
+  - `researcher`: data cleaning and sentiment correction
+  - `analyst`: pain-point clustering and insight extraction
+  - `pm`: PRD generation and formatting
+- Agent modules must expose typed contracts for input/output payloads.
+- Prompt templates and response parsers must be versioned and testable.
+- Never mix prompt-building logic with React presentation components.
+
+## 6) Data and API Practices
+
+- Define typed DTOs for all internal API boundaries.
+- Never trust client input; validate and sanitize at the boundary.
+- Handle API errors explicitly; do not silently swallow exceptions.
+- Keep side effects (network, storage, external SDK calls) in dedicated services.
+
+## 7) Quality Gate
+
+- New features should include at least basic tests for critical paths.
+- Linting and type checks must pass before merge.
+- Refactors must preserve behavior and update affected types.
+- Prefer incremental, reviewable changes over large mixed commits.
+
+## 8) Naming and Readability
+
+- Use clear, intention-revealing names for files, symbols, and variables.
+- Avoid abbreviations unless they are domain-standard.
+- Add concise comments only where logic is non-obvious.
+- Keep functions focused; split when one function handles multiple responsibilities.
+
