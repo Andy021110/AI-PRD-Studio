@@ -23,7 +23,10 @@ type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
 
 type MermaidBlockProps = {
   chart: string;
+  isStreaming: boolean;
 };
+
+let mermaidInitialized = false;
 
 function flattenText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") {
@@ -52,48 +55,111 @@ function isErrorSvg(svg: string) {
   );
 }
 
-function MermaidBlock({ chart }: MermaidBlockProps) {
+function looksIncompleteMermaid(chart: string) {
+  const trimmed = chart.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  const lines = trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) {
+    return true;
+  }
+
+  const header = lines[0].toLowerCase();
+  if (header === "pie" || header.startsWith("pie ")) {
+    const rows = lines.slice(1).filter((line) => line.includes(":"));
+    return rows.length < 2;
+  }
+
+  if (header.startsWith("flowchart")) {
+    return !lines.some((line) => line.includes("-->"));
+  }
+
+  return false;
+}
+
+function MermaidBlock({ chart, isStreaming }: MermaidBlockProps) {
   const [svg, setSvg] = useState("");
   const [failed, setFailed] = useState(false);
+  const [isPending, setIsPending] = useState(false);
   const mermaidId = useId().replace(/:/g, "");
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const renderChart = async () => {
+    const renderChart = async (attempt = 0) => {
+      if (isStreaming && looksIncompleteMermaid(chart)) {
+        setIsPending(true);
+        setFailed(false);
+        setSvg("");
+        return;
+      }
+
       try {
         const { default: mermaid } = await import("mermaid");
 
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: "neutral",
-          suppressErrorRendering: true,
-        });
+        if (!mermaidInitialized) {
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: "neutral",
+            suppressErrorRendering: true,
+          });
+          mermaidInitialized = true;
+        }
 
         const result = await mermaid.render(`prd-mermaid-${mermaidId}`, chart);
         if (!cancelled) {
           if (isErrorSvg(result.svg)) {
-            setFailed(true);
-            setSvg("");
-            return;
+            throw new Error("Mermaid returned error SVG.");
           }
           setSvg(result.svg);
           setFailed(false);
+          setIsPending(false);
         }
       } catch {
-        if (!cancelled) {
-          setFailed(true);
-          setSvg("");
+        if (cancelled) {
+          return;
         }
+
+        if (isStreaming && attempt < 4) {
+          setIsPending(true);
+          timer = setTimeout(() => {
+            void renderChart(attempt + 1);
+          }, 220 * (attempt + 1));
+          return;
+        }
+
+        setFailed(true);
+        setIsPending(false);
+        setSvg("");
       }
     };
 
+    setIsPending(isStreaming);
+    setFailed(false);
+    setSvg("");
     void renderChart();
 
     return () => {
       cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
     };
-  }, [chart, mermaidId]);
+  }, [chart, mermaidId, isStreaming]);
+
+  if (isPending) {
+    return (
+      <pre>
+        <code>{chart}</code>
+      </pre>
+    );
+  }
 
   if (failed || !svg) {
     return (
@@ -162,7 +228,7 @@ export function PrdMarkdown({
       code: ({ className: codeClassName, children, ...props }: MarkdownCodeProps) => {
         if (codeClassName?.includes("language-mermaid")) {
           const chart = String(children).trim();
-          return <MermaidBlock chart={chart} />;
+          return <MermaidBlock chart={chart} isStreaming={isStreaming} />;
         }
 
         return (
@@ -172,7 +238,7 @@ export function PrdMarkdown({
         );
       },
     };
-  }, [content]);
+  }, [isStreaming]);
 
   return (
     <div className={cn(PRD_PROSE_CLASS, className)}>
