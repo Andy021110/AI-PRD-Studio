@@ -1,6 +1,5 @@
-import fs from "fs/promises";
-import path from "path";
 import { z } from "zod";
+import { resolveArchiveDir, writeArchiveFile } from "@/lib/archive/safe-archive";
 
 const requestSchema = z.object({
   productCategory: z.string().min(1),
@@ -34,42 +33,6 @@ function getModelEndpoint() {
     ? rawBaseUrl
     : `${rawBaseUrl}/v1`;
   return `${normalizedBaseUrl}/chat/completions`;
-}
-
-function safeProductName(productCategory: string) {
-  return (
-    productCategory.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, "_") || "Unknown_Product"
-  );
-}
-
-function nowTimestamp() {
-  const d = new Date();
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(
-    d.getHours(),
-  )}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-}
-
-async function resolveOutputDir(productCategory: string) {
-  const outputsRoot = path.join(process.cwd(), "outputs");
-  const safeName = safeProductName(productCategory);
-  await fs.mkdir(outputsRoot, { recursive: true });
-
-  const entries = await fs.readdir(outputsRoot, { withFileTypes: true });
-  const matched = entries
-    .filter((entry) => entry.isDirectory() && entry.name.endsWith(`_${safeName}`))
-    .map((entry) => entry.name)
-    .sort()
-    .reverse();
-
-  if (matched.length > 0) {
-    return path.join(outputsRoot, matched[0]);
-  }
-
-  const folderName = `${nowTimestamp()}_${safeName}`;
-  const outputDir = path.join(outputsRoot, folderName);
-  await fs.mkdir(outputDir, { recursive: true });
-  return outputDir;
 }
 
 function parseJsonObject(raw: string) {
@@ -251,7 +214,9 @@ Output 3 concise expert suggestions in JSON only.`;
 export async function POST(request: Request) {
   try {
     const payload = requestSchema.parse(await request.json());
-    const outputDir = await resolveOutputDir(payload.productCategory);
+    const outputDir = await resolveArchiveDir(payload.productCategory, {
+      reuseLatestByProduct: true,
+    });
 
     const [trackASettled, trackBSettled] = await Promise.allSettled([
       runTrackA(payload),
@@ -268,15 +233,15 @@ export async function POST(request: Request) {
         : { ok: false, error: String(trackBSettled.reason) };
 
     await Promise.all([
-      fs.writeFile(
-        path.join(outputDir, "critic_rag_track.json"),
+      writeArchiveFile(
+        outputDir,
+        "critic_rag_track.json",
         JSON.stringify(ragArchive, null, 2),
-        "utf-8",
       ),
-      fs.writeFile(
-        path.join(outputDir, "critic_local_track.json"),
+      writeArchiveFile(
+        outputDir,
+        "critic_local_track.json",
         JSON.stringify(localArchive, null, 2),
-        "utf-8",
       ),
     ]);
 

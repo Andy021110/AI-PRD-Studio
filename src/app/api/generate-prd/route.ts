@@ -1,8 +1,7 @@
-import fs from "fs/promises";
-import path from "path";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 import { z } from "zod";
+import { resolveArchiveDir, writeArchiveFile } from "@/lib/archive/safe-archive";
 
 const insightSchema = z.object({
   title: z.string().min(1),
@@ -39,22 +38,12 @@ export async function POST(request: Request) {
     const payload = requestSchema.parse(await request.json());
     const openai = buildProvider();
     const enableSearch = payload.enableSearch ?? false;
-    const d = new Date();
-    const pad = (n: number) => n.toString().padStart(2, "0");
-    const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(
-      d.getDate(),
-    )}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-    const safeProductName =
-      payload.productCategory.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, "_") ||
-      "Unknown_Product";
-    const folderName = `${timestamp}_${safeProductName}`;
-    const outputDir = path.join(process.cwd(), "outputs", folderName);
+    const outputDir = await resolveArchiveDir(payload.productCategory);
 
-    await fs.mkdir(outputDir, { recursive: true });
-    await fs.writeFile(
-      path.join(outputDir, "1_user_insights.json"),
+    await writeArchiveFile(
+      outputDir,
+      "1_user_insights.json",
       JSON.stringify(payload.insights, null, 2),
-      "utf-8",
     );
 
     let searchContext = "未开启竞品检索或检索失败。";
@@ -78,10 +67,10 @@ export async function POST(request: Request) {
           };
           searchContext = JSON.stringify(data.results ?? []);
           console.log("=== 🔍 阶段1完成：成功拿到数据 ===");
-          await fs.writeFile(
-            path.join(outputDir, "2_market_research.json"),
+          await writeArchiveFile(
+            outputDir,
+            "2_market_research.json",
             JSON.stringify(data.results ?? [], null, 2),
-            "utf-8",
           );
         }
       } catch (e) {
@@ -146,14 +135,11 @@ ${searchContext}
 请严格基于上述双源数据，立即生成一份高质量、具有极强商业对标价值的全中文 PRD。
 `,
       onFinish: async ({ text }) => {
-        // 保留你之前写的落地保存文件逻辑（fs.writeFile）
         try {
-          await fs.writeFile(
-            path.join(outputDir, "3_final_prd.md"),
-            text,
-            "utf-8",
-          );
-          console.log(`\n✅ 报告已完美落盘保存至: ${outputDir}`);
+          await writeArchiveFile(outputDir, "3_final_prd.md", text);
+          if (outputDir) {
+            console.log(`\n✅ 报告已完美落盘保存至: ${outputDir}`);
+          }
         } catch (err) {
           console.error("保存 PRD 失败:", err);
         }
