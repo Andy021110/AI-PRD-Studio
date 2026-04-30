@@ -145,7 +145,10 @@ Return JSON only with this shape:
 Rules:
 - Exactly 3 suggestions.
 - Each suggestion must cite market/industry rationale from provided context.
-- Keep concise and practical.`;
+- Keep concise and practical.
+- CRITICAL RULE: You MUST generate the final JSON response entirely in Simplified Chinese (简体中文).
+- Do NOT use English for any titles, rationale, actions, or any other JSON text values.
+- If any draft token appears in English, rewrite it to natural, professional Simplified Chinese before final output.`;
 
     const prompt = `Product Category: ${productCategory}
 
@@ -155,7 +158,8 @@ ${JSON.stringify(topSources, null, 2)}
 [Current PRD Draft]
 ${prdMarkdown}
 
-Provide exactly 3 fact-grounded critique suggestions in JSON.`;
+Provide exactly 3 fact-grounded critique suggestions in JSON.
+Final response must be 100% Simplified Chinese in all text fields.`;
 
     const modelText = await callModel({
       system,
@@ -192,14 +196,18 @@ Return JSON only with this shape:
 }
 Rules:
 - Exactly 3 suggestions.
-- Prioritize actionable quality improvements.`;
+- Prioritize actionable quality improvements.
+- CRITICAL RULE: You MUST generate the final JSON response entirely in Simplified Chinese (简体中文).
+- Do NOT use English for any titles, rationale, actions, or any other JSON text values.
+- If any draft token appears in English, rewrite it to natural, professional Simplified Chinese before final output.`;
 
   const prompt = `Product Category: ${productCategory}
 
 [Current PRD Draft]
 ${prdMarkdown}
 
-Output 3 concise expert suggestions in JSON only.`;
+Output 3 concise expert suggestions in JSON only.
+Final response must be 100% Simplified Chinese in all text fields.`;
 
   const modelText = await callModel({ system, prompt });
   const parsed = parseJsonObject(modelText);
