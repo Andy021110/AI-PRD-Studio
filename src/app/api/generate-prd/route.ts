@@ -88,6 +88,7 @@ Your task is to write a comprehensive, commercially viable PRD in pure Markdown.
 CRITICAL INSTRUCTIONS: 
 1. You MUST output the ENTIRE document in professional Chinese (中文). 
 2. You MUST integrate the provided [Market Competitor Data] into your analysis. Do not ignore it.
+3. CRITICAL RULE for Mermaid: When generating a Mermaid pie chart, you MUST use Chinese for the titles and labels, BUT you MUST strictly use standard half-width English colons ":" and standard English quotes '"'. NEVER use full-width Chinese punctuations (like “ ” or ：) inside the Mermaid code block.
 
 Format Requirements (Strictly follow this structure):
 - Start with exactly: > **🤖 Critic 质检报告：已融合全网竞品数据** (如果传入了外部数据) 或 > **🤖 Critic 质检报告：基于本地洞察**
