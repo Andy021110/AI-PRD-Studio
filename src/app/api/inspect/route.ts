@@ -72,7 +72,6 @@ export async function POST(request: Request) {
       const result = await generateObject({
         model: openai.chat("deepseek-chat"),
         schema: inspectResponseSchema,
-        mode: "tool",
         temperature: 0,
         prompt,
       });

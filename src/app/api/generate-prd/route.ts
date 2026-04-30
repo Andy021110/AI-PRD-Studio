@@ -31,7 +31,6 @@ function buildProvider() {
   return createOpenAI({
     apiKey: process.env.OPENAI_API_KEY,
     baseURL: normalizedBaseUrl,
-    compatibility: "compatible",
   });
 }
 
